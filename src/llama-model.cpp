@@ -13910,9 +13910,9 @@ struct llm_build_eagle : public llm_graph_context {
 
         cur = inpL;
 
-        cur = build_norm(cur,
-                model.output_norm, NULL,
-                LLM_NORM_RMS, -1);
+        // cur = build_norm(cur,
+        //         model.output_norm, NULL,
+        //         LLM_NORM_RMS, -1);
 
         cb(cur, "result_norm", -1);
         res->t_embd = cur;
@@ -14427,7 +14427,6 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
         case LLM_ARCH_RWKV7:
         case LLM_ARCH_ARWKV7:
         case LLM_ARCH_WAVTOKENIZER_DEC:
-        case LLM_ARCH_EAGLE:
             return LLAMA_ROPE_TYPE_NONE;
 
         // use what we call a normal RoPE, operating on pairs of consecutive head values
@@ -14454,6 +14453,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
         case LLM_ARCH_BAILINGMOE:
         case LLM_ARCH_NEO_BERT:
         case LLM_ARCH_ARCEE:
+        case LLM_ARCH_EAGLE:
             return LLAMA_ROPE_TYPE_NORM;
 
         // the pairs of head values are offset by n_rot/2
