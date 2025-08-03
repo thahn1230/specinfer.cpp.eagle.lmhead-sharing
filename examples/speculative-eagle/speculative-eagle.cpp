@@ -349,6 +349,11 @@ int main(int argc, char ** argv) {
 
     // [추가] 각 단계별 수락 길이를 저장하기 위한 벡터
     std::vector<int> acceptance_lengths;
+    std::vector<int> decoding_latencies;
+    std::vector<int> verification_latencies;
+
+    int cur_depth = 0; // 현재 트리 깊이 -ym-
+    int third_depth[4] = { 0, 1, 4, 5}; // 각 깊이별로 몇 개의 시퀀스가 있는지 저장 -ym-
 
     for (int s = 0; s < n_seq_dft; ++s) {
         // allocate llama_sampler for each draft sequence
@@ -577,7 +582,7 @@ int main(int argc, char ** argv) {
 
         // [추가] 현재 단계의 수락 길이를 저장합니다.
         // 루프가 끝났을 때 i_dft는 이번 단계에서 연속적으로 수락된 토큰의 개수와 같습니다.
-        acceptance_lengths.push_back(i_dft);
+        acceptance_lengths.push_back(i_dft + 1);
 
         backup_data = temp2;
         std::vector temp3 = std::vector<float>(backup_data.end() - 4096, backup_data.end());
@@ -664,8 +669,43 @@ int main(int argc, char ** argv) {
         for (int i = 0; i < n_draft; ++i) {
             batch_dft.n_tokens = 0;
 
-            for (int s = 0; s < n_seq_dft; ++s) {
-                drafts[s].skip = false;
+            if (cur_depth < 2) {
+                for (int s = 0; s < n_seq_dft; ++s) {
+                    drafts[s].skip = false;
+                }
+            } else if (cur_depth == 2) {
+                // skip all sequences except the first one
+                for (int s = 0; s < n_seq_dft; ++s) {
+                    int in = 0;
+                    for (int i = 0; i < 4; i++) {
+                        if (s == third_depth[i])
+                            in = 1;
+                    }
+                    if (in == 0) {
+                        drafts[s].skip = true;
+                    } else {
+                        drafts[s].skip = false;
+                    }
+                }
+            } else if (cur_depth == 3) {
+                for (int s = 0; s < n_seq_dft; ++s) {
+                    if (s == 0)
+                        drafts[s].skip = false;
+                    else
+                        drafts[s].skip = true;
+                }
+            } else if (cur_depth == 4) {
+                // skip all sequences except the first one
+                for (int s = 0; s < n_seq_dft; ++s) {
+                    if (s == 0) 
+                        drafts[s].skip = false;
+                    else
+                        drafts[s].skip = true;
+                }
+            } else {
+                for (int s = 0; s < n_seq_dft; ++s) {
+                    drafts[s].skip = false;
+                }
             }
 
             std::vector<float> temp; // callback data를 임시로 저장 -ym-
@@ -688,11 +728,54 @@ int main(int argc, char ** argv) {
 
                 temp.insert(temp.end(), cb_data.data.begin() + (4096 * s), cb_data.data.begin() + (4096 * (s + 1)));
 
-                // attempt to split the branch if the probability is high enough
-                for (int f = 1; f < 2; ++f) {
+                // attempt to split the branch if the probability is high enough// attempt to split the branch if the probability is high enough
+
+                //EAGLE-1 like tree 구조
+                // for (int f = 1; f < 3; ++f) {
+                //     LOG_DBG("cur_p->data[f].p = %lf\n", cur_p->data[f].p);
+                //     // if (n_seq_cur < n_seq_dft && cur_p->data[f].p > p_draft_split) {
+                //     if (n_seq_cur < n_seq_dft && s < 5) {
+                ///////////////////////////////////////////////
+
+                int f_max = 4; // 최대 분기 수 -ym-
+                // LOG("cur_depth = %d, s = %d\n", cur_depth, s);
+                //기존 binary tree 구조
+                if (cur_depth == 0)
+                    f_max = 4;
+                else if (cur_depth == 1) {
+                    if (s == 0)
+                        f_max = 3;
+                    else if (s == 1)
+                        f_max = 2;
+                    else if (s == 2)
+                        f_max = 2;
+                    else if (s == 3)
+                        f_max = 1;
+                }
+                else if (cur_depth == 2) {
+                    if (s == 0)
+                        f_max = 3;
+                    else if (s == 1)
+                        f_max = 1;
+                    else if (s == 4)
+                        f_max = 2;
+                    else if (s == 5)
+                        f_max = 2;
+                }
+                else if (cur_depth == 3) {
+                    if (s == 0)
+                        f_max =3;
+                }
+                else if (cur_depth == 4) {
+                    f_max = 2;
+                }
+                else
+                    f_max = 4;
+                for (int f = 1; f < f_max; ++f) {
                     LOG_DBG("cur_p->data[f].p = %lf\n", cur_p->data[f].p);
                     // if (n_seq_cur < n_seq_dft && cur_p->data[f].p > p_draft_split) {
                     if (n_seq_cur < n_seq_dft) {
+                //////////////////////////////////////////////
                         LOG_DBG("splitting seq %3d into %3d\n", s, n_seq_cur);
 
                         llama_memory_seq_rm(mem_dft,    n_seq_cur, -1, -1);
@@ -774,11 +857,13 @@ int main(int argc, char ** argv) {
             llama_decode_eagle(ctx_dft, batch_dft, temp.data());
             ++n_past_cur;
             ++n_drafted;
+            cur_depth += 1;
 
             if (batch_tgt.n_tokens > n_draft) {
                 break;
             }
         }
+        cur_depth = 0;
 
         // evaluate the target model on the drafted tokens
         {
