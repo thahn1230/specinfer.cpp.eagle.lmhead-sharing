@@ -4291,12 +4291,32 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     embd_fc   = create_tensor(tn(LLM_TENSOR_EMBD_FC, "weight"), {n_embd * 2, n_embd}, 0);
                     embd_fc_b = create_tensor(tn(LLM_TENSOR_EMBD_FC, "bias"),   {n_embd}, 0);
 
+                    // ================================================================================================
+                    // ORIGINAL CODE (output tensor creation)
+                    // ================================================================================================
+                    /*
                     output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
 
                     // if output is NULL, init from the input tok embed
                     if (output == NULL) {
                         output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, TENSOR_DUPLICATED_EAGLE);
                         ml.n_created--;
+                    }
+                    */
+
+                    // ================================================================================================
+                    // CURRENT CODE (output tensor sharing support)
+                    // ================================================================================================
+                    output = create_tensor(tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
+
+                    // if output is NULL, defer creation for potential sharing with target model
+                    if (output == NULL) {
+                        // CRITICAL: Keep output as NULL for true pointer sharing at runtime
+                        // Do NOT create fallback tensor - let runtime handle target model sharing
+                        LLAMA_LOG_DEBUG("%s: EAGLE draft model has no output tensor - will share with target at runtime\n", __func__);
+                        
+                        // Note: model.output remains NULL, speculative-eagle.cpp will detect this
+                        // and assign target model's output tensor directly
                     }
 
                     for (int i = 0; i < n_layer; ++i) {
@@ -13920,11 +13940,50 @@ struct llm_build_eagle : public llm_graph_context {
         cb(cur, "result_norm", -1);
         res->t_embd = cur;
 
+        // ================================================================================================
+        // ORIGINAL CODE (lm_head without validation)
+        // ================================================================================================
+        /*
         // lm_head
         cur = build_lora_mm(model.output, cur);
 
         cb(cur, "result_output", -1);
         res->t_logits = cur;
+        */
+
+        // ================================================================================================
+        // CURRENT CODE (lm_head with output tensor validation)
+        // ================================================================================================
+        
+                // Validate output tensor before using it for lm_head  
+        if (!model.output) {
+            // EAGLE draft model has no output tensor - use embedding output as temporary placeholder
+            // This will be corrected when output tensor sharing is set up at runtime
+            printf("⚠️ GRAPH_BUILD: EAGLE model output tensor is NULL - using embedding as placeholder\n");
+            
+            res->t_logits = cur;  // Use current embedding tensor (will be overridden by LM head sharing)
+            
+            cb(cur, "result_output_placeholder", -1);
+        } else {
+            // Validate tensor dimensions
+            const int64_t n_vocab = model.vocab.n_tokens();
+            const int64_t n_embd = hparams.n_embd;
+            if (model.output->ne[0] != n_embd || model.output->ne[1] != n_vocab) {
+                LLAMA_LOG_ERROR("%s: EAGLE model output tensor has wrong dimensions\n", __func__);
+                LLAMA_LOG_ERROR("%s: Expected [%ld, %ld], got [%ld, %ld]\n", __func__, 
+                                n_embd, n_vocab, model.output->ne[0], model.output->ne[1]);
+                throw std::runtime_error("EAGLE model output tensor has wrong dimensions");
+            }
+            
+            LLAMA_LOG_DEBUG("%s: EAGLE output tensor validated - shape [%ld, %ld]\n", __func__, 
+                            model.output->ne[0], model.output->ne[1]);
+            
+            // lm_head
+            cur = build_lora_mm(model.output, cur);
+
+            cb(cur, "result_output", -1);
+            res->t_logits = cur;
+        }
 
         ggml_build_forward_expand(gf, cur);
     }

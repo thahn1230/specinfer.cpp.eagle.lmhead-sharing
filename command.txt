@@ -1,0 +1,43 @@
+서버 tree-based eagle 실행 명령어
+build/bin/llama-speculative-eagle -m /data/youngmin/models/vicuna.gguf -md /data/youngmin/models/EAGLE.gguf -f test.txt -c 0 --color --top-k 2 -fa --temp 0.0 --draft-max 35 --draft-min 1 --n-predict 400 -ngl 40 -ngld 20 -np 10 -s 1234
+
+서버 sequence-based eagle 실행 명령어
+build/bin/llama-speculative-simple-eagle -m /data/youngmin/models/vicuna.gguf -md /data/youngmin/models/EAGLE.gguf -f test.txt -c 0 --color --top-k 1 -fa --temp 0.0 --draft-max 10 --draft-min 1 --n-predict 400 -ngl 40 -ngld 20 -x 1234
+
+s25 tree-based eagle 실행 명령어
+bin/llama-speculative-eagle -m vicuna_q4_0.gguf -md EAGLE_q4_0.gguf -f prompt.txt -c 0 --color --top-k 2 --temp 0.0 --draft-max 35 --draft-min 1 --n-predict 400 -ngl 40 -ngld 10 -np 10 -s 1234
+
+s25 sequence-based eagle 명령어
+bin/llama-speculative-simple-eagle -m vicuna_q4_0.gguf -md EAGLE_q4_0.gguf -f prompt.txt -c 0 --color --top-k 1 --temp 0.0 --draft-max 10 --draft-min 1 --n-predict 400 -ngl 40 -ngld 10 -s 1234
+
+s25 llm single 명령어
+bin/llama-simple -m vicuna_q4_0.gguf -n 400 -ngl 40 "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. USER: Please teach me how to make pancake. ASSISTANT:"
+
+
+s24 ultra 명령어
+LD_LIBRARY_PATH=.. ./llama-speculative-eagle -m vicuna_q4_0_output4.gguf  -md EAGLE_q4_0_output4.gguf  -p "Hello, my name is" -c 0 --color --top-k 1 --temp 0.0 --draft-max 10 --draft-min 1 --n-predict 400 -ngl 40 -ngld 10 -s 1234
+
+1. opencl build 명령어
+cmake .. -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a \
+  -DANDROID_PLATFORM=android-28 \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DGGML_OPENCL=ON
+
+2. opencl + kleidiAI + NEON build 명령어
+cmake .. -G Ninja \
+ -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+ -DANDROID_ABI=arm64-v8a \
+ -DANDROID_PLATFORM=android-28 \
+ -DCMAKE_C_FLAGS="-march=armv8-a+dotprod+i8mm+fp16" \
+ -DCMAKE_CXX_FLAGS="-march=armv8-a+dotprod+i8mm+fp16" \
+ -DGGML_CPU_ARM_ARCH="armv8-a+dotprod+i8mm+fp16" \
+ -DGGML_OPENMP=ON \
+ -DGGML_OPENCL=ON \
+ -DBUILD_SHARED_LIBS=OFF \
+ -DGGML_LLAMAFILE=ON \
+ -DLLAMA_CURL=OFF
+
+excute build
+ninja
